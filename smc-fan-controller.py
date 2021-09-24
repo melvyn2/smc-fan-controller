@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 
 DEFAULT_FAN_ZONES = [0, 1]
 IPMI_SDR_TEMP_SENSOR_FILTER = ("CPU",)  # Filter temperature sensors with those that start with any of these
@@ -55,7 +56,7 @@ def target_fan_speed(curve: dict[int, tuple[int, int]], temperature: int) -> int
     # This requires python 3.6+ for insertion-ordered dict entries
     for segment in curve.items():
         if temperature <= segment[0]:
-            return segment[1][0] * temperature + segment[1][1]
+            return int(segment[1][0] * temperature + segment[1][1])
     return 100
 
 
@@ -78,7 +79,7 @@ def get_system_temps():
     if temp_sensors is False:
         print("Error: unable to get current system temperatures", file=sys.stderr)
         return False
-    cpu_temps: map = map(lambda sensor: sensor["value"],
+    cpu_temps: map = map(lambda sensor: int(sensor["value"]),
                          filter(lambda sensor: sensor["name"].startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
                                 filter(lambda sensor: sensor["status"] != "ns", temp_sensors)))
     return list(cpu_temps)
@@ -89,7 +90,7 @@ def get_fan_rpms():
     if fan_sensors is False:
         print("Error: unable to get current fan RPMs", file=sys.stderr)
         return False
-    fan_rpms: map = map(lambda sensor: sensor["value"],
+    fan_rpms: map = map(lambda sensor: int(sensor["value"]),
                         filter(lambda sensor: sensor["status"] != "ns", fan_sensors))
     return list(fan_rpms)
 
@@ -202,7 +203,7 @@ if __name__ == '__main__':
         # noinspection PyUnboundLocalVariable
         quit_and_reset_preset(original_preset)
     except Exception as e:
-        print(f"Error: Encountered {e}: {e.args}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
         # If original_preset wasn't set, no changes were made and the program can crash without consequence
         # noinspection PyUnboundLocalVariable
         quit_and_reset_preset(original_preset, False)
