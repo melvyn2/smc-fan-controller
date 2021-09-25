@@ -17,6 +17,7 @@ TEMPERATURE_CURVE = [(0, 0),
                      (80, 80),
                      (90, 100)]
 LOOP_DELAY = 3
+DEBUG = int(os.environ.get("SFC_DEBUG", "0"))
 
 FAN_PRESET_STANDARD = 0
 FAN_PRESET_FULL = 1
@@ -60,17 +61,36 @@ def target_fan_speed(curve: dict[int, tuple[int, int]], temperature: int) -> int
     return 100
 
 
-def ipmi_sdr_cmd(sensor_type: str):
-    cmd: str = f"ipmitool -c sdr type {sensor_type}"
-    s = subprocess.run(f"{cmd} 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def ipmi_cmd(raw_cmd: str):
+    if DEBUG:
+        timer = time.time()
+    s = subprocess.run(f"ipmitool {raw_cmd} 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if s.returncode != 0:
         print(" Error: Problem running ipmitool", file=sys.stderr)
-        print(f" Command: {cmd}", file=sys.stderr)
+        print(f" Command: ipmitool {raw_cmd}", file=sys.stderr)
         print(f" Return code: {s.returncode}", file=sys.stderr)
         print(f" Output: {s.stdout.decode('ascii').strip()}", file=sys.stderr)
         return False
+    elif DEBUG:
+        print(f" Command: ipmitool {raw_cmd}", file=sys.stderr)
+        print(f" Return code: {s.returncode}", file=sys.stderr)
+        print(f" Output: {s.stdout.decode('ascii').strip()}", file=sys.stderr)
+        # noinspection PyUnboundLocalVariable
+        print(f" Time Elapsed: {time.time()-timer}")
 
-    data = csv.reader(s.stdout.decode('ascii').splitlines())
+    out: bytes = s.stdout.strip()
+    if out:
+        return out
+    else:
+        return True
+
+
+def ipmi_sdr_cmd(sensor_type: str):
+    csv_data = ipmi_cmd(f"-c sdr type {sensor_type}")
+    if csv_data is False:
+        return False
+
+    data = csv.reader(csv_data.decode('ascii').splitlines())
     return [dict(zip(IPMI_SDR_CSV_KEYS, sensor_data)) for sensor_data in data]
 
 
@@ -95,25 +115,8 @@ def get_fan_rpms():
     return list(fan_rpms)
 
 
-def ipmi_raw_cmd(raw_cmd: str):
-    cmd: str = f"ipmitool raw {raw_cmd}"
-    s = subprocess.run(f"{cmd} 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if s.returncode != 0:
-        print(" Error: Problem running ipmitool", file=sys.stderr)
-        print(f" Command: {cmd}", file=sys.stderr)
-        print(f" Return code: {s.returncode}", file=sys.stderr)
-        print(f" Output: {s.stdout.decode('ascii').strip()}", file=sys.stderr)
-        return False
-
-    out: bytes = s.stdout.strip()
-    if out:
-        return out
-    else:
-        return True
-
-
 def get_fan_preset():
-    res = ipmi_raw_cmd(IPMI_GET_FAN_PRESET)
+    res = ipmi_cmd("raw " + IPMI_GET_FAN_PRESET)
     if res is False:
         print("Error: could not get current fan preset", file=sys.stderr)
         return False
@@ -124,7 +127,7 @@ def set_fan_preset(preset: int):
     if preset not in FAN_PRESETS_STR:
         print("Warning: setting fan preset to unknown preset", file=sys.stderr)
 
-    if ipmi_raw_cmd(IPMI_SET_FAN_PRESET.format(preset=preset)):
+    if ipmi_cmd("raw " + IPMI_SET_FAN_PRESET.format(preset=preset)):
         print("Updated preset to " + FAN_PRESETS_STR.get(preset, "unknown"))
         return True
     else:
@@ -147,7 +150,7 @@ def check_preset_full(set_to_full: bool = False):
 
 # noinspection PyDefaultArgument
 def get_zone_speed(fan_zone: int):
-    speed = ipmi_raw_cmd(IPMI_GET_ZONE_SPEED.format(zone=fan_zone))
+    speed = ipmi_cmd("raw " + IPMI_GET_ZONE_SPEED.format(zone=fan_zone))
     if speed is False:
         print(f"Error: unable to get zone {fan_zone} speed")
         return False
@@ -156,7 +159,7 @@ def get_zone_speed(fan_zone: int):
 
 # noinspection PyDefaultArgument
 def set_zone_speed(fan_zone: int, speed: int):
-    if ipmi_raw_cmd(IPMI_SET_ZONE_SPEED.format(zone=fan_zone, speed=speed)):
+    if ipmi_cmd("raw " + IPMI_SET_ZONE_SPEED.format(zone=fan_zone, speed=speed)):
         print(f"Set fans on zone {fan_zone} to {speed:02}%")
         return True
     else:
