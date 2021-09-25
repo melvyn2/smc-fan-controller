@@ -31,9 +31,11 @@ FAN_PRESETS_STR = {
     FAN_PRESET_HEAVYIO: "heavyio"
 }
 
-IPMI_SDR_CSV_KEYS = ["name", "value", "unit", "status"]
 IPMI_SDR_TEMP_TYPE = "TEMP"
 IPMI_SDR_FAN_TYPE = "FAN"
+IPMI_SDR_FULL_CSV_KEYS = ["name", "value", "unit", "status", "entity_id", "entity_name", "type", "nominal", "minimum",
+                          "maximum", "unr", "uc", "unc", "lnr", "lc", "lnc", "unknown_1", "unknown_2"]
+IPMI_SDR_CONCISE_CSV_KEYS = ["name", "value", "unit", "status"]
 
 IPMI_GET_ZONE_SPEED = "0x30 0x70 0x66 0x00 0x{zone:02x}"
 IPMI_SET_ZONE_SPEED = "0x30 0x70 0x66 0x01 0x{zone:02x} 0x{speed:02x}"
@@ -86,28 +88,38 @@ def ipmi_cmd(raw_cmd: str):
         return True
 
 
-def ipmi_sdr_cmd(sensor_type: str):
+def ipmi_sdr_sensors_from_type(sensor_type: str):
+    # This isn't used for temperature because IPMITool fetches all the sensors individually, which can be very slow
     csv_data = ipmi_cmd(f"-c sdr type {sensor_type}")
     if csv_data is False:
         return False
 
     data = csv.reader(csv_data.splitlines())
-    return [dict(zip(IPMI_SDR_CSV_KEYS, sensor_data)) for sensor_data in data]
+    return [dict(zip(IPMI_SDR_CONCISE_CSV_KEYS, sensor_data)) for sensor_data in data]
 
 
-def get_system_temps():
-    temp_sensors: list[dict] = ipmi_sdr_cmd(IPMI_SDR_TEMP_TYPE)
-    if temp_sensors is False:
+def ipmi_sdr_sensors_from_name(sensors: list[str]):
+    sep = "' '"
+    csv_data = ipmi_cmd(f"-c sdr get '{sep.join(sensors)}'")
+    if csv_data is False:
+        return False
+
+    data = csv.reader(csv_data.splitlines())
+    return [dict(zip(IPMI_SDR_FULL_CSV_KEYS, sensor_data)) for sensor_data in data]
+
+
+def get_system_temps(sensors: list[str]):
+    data: list[dict] = ipmi_sdr_sensors_from_name(sensors)
+    if data is False:
         print("Error: unable to get current system temperatures", file=sys.stderr)
         return False
     temps: map = map(lambda sensor: int(sensor["value"]),
-                     filter(lambda sensor: sensor["name"].startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
-                            filter(lambda sensor: sensor["status"] != "ns", temp_sensors)))
+                     filter(lambda sensor: sensor["status"] != "ns", data))
     return list(temps)
 
 
 def get_fan_rpms():
-    fan_sensors: list[dict] = ipmi_sdr_cmd(IPMI_SDR_FAN_TYPE)
+    fan_sensors: list[dict] = ipmi_sdr_sensors_from_type(IPMI_SDR_FAN_TYPE)
     if fan_sensors is False:
         print("Error: unable to get current fan RPMs", file=sys.stderr)
         return False
@@ -165,21 +177,24 @@ def set_zone_speed(fan_zone: int, speed: int):
         return False
 
 
-def quit_and_reset_preset(preset: int, clean: bool = True):
-    if not set_fan_preset(preset):
+def quit_and_reset_preset(*_signal_args, clean: bool = True):
+    if not set_fan_preset(EXIT_PRESET):
         print("CRITICAL: Fan preset could not be reset, fans may be locked too low!"
               " Overheat possible!", file=sys.stderr)
         exit(2)
     exit(0 if clean else 1)
 
 
-def main_loop():
+def main_loop(temp_sensors: list[str], temperature_curve: dict[int, tuple[int, int]]):
     time.sleep(LOOP_DELAY)
-    temps = get_system_temps()
+
+    temps = get_system_temps(temp_sensors)
     if temps is False:
         raise IOError("Could not get system temperatures")
-    target_speed = target_fan_speed(temp_curve_dict, max(temps))
     print(f"Got temperature {max(temps)}")
+
+    target_speed = target_fan_speed(temperature_curve, max(temps))
+
     for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
         if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
             raise IOError("Could not set fan speed")
@@ -193,20 +208,29 @@ if __name__ == '__main__':
         print("Warning: ipmitool access requires root;"
               " you may see misleading 'No such file or directory' errors", file=sys.stderr)
 
-    original_preset = get_fan_preset()
-    original_preset = FAN_PRESET_OPTIMAL if original_preset is False else original_preset  # Set fallback to optimal
-    temp_curve_dict = generate_curve_coefficients(TEMPERATURE_CURVE)
-    signal.signal(signal.SIGINT, lambda *_: quit_and_reset_preset(original_preset))
-    signal.signal(signal.SIGTERM, lambda *_: quit_and_reset_preset(original_preset))
+    EXIT_PRESET = get_fan_preset()
+    EXIT_PRESET = FAN_PRESET_OPTIMAL if EXIT_PRESET is False else EXIT_PRESET  # Set fallback to optimal
+
+    temp_curve = generate_curve_coefficients(TEMPERATURE_CURVE)
+
+    sdr_temp_sensors = list(filter(lambda name: name.startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
+                                   map(lambda sensor: sensor["name"], ipmi_sdr_sensors_from_type(IPMI_SDR_TEMP_TYPE))))
+    print(f"Using IPMI temperature sensors: {sdr_temp_sensors}")
+
+    # noinspection PyTypeChecker
+    signal.signal(signal.SIGINT, quit_and_reset_preset)
+    # noinspection PyTypeChecker
+    signal.signal(signal.SIGTERM, quit_and_reset_preset)
 
     # noinspection PyBroadException
     try:
         check_preset_full(True)
         while True:
-            main_loop()
+            # noinspection PyTypeChecker
+            main_loop(sdr_temp_sensors, temp_curve)
     except KeyboardInterrupt:
-        quit_and_reset_preset(original_preset)
+        quit_and_reset_preset()
     except Exception as e:
         print(traceback.format_exc(), file=sys.stderr)
         # If original_preset wasn't set, no changes were made and the program can crash without consequence
-        quit_and_reset_preset(original_preset, False)
+        quit_and_reset_preset(clean=False)
