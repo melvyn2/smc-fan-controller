@@ -2,6 +2,7 @@
 import csv
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -76,7 +77,7 @@ def ipmi_cmd(raw_cmd: str):
         print(f" Return code: {s.returncode}", file=sys.stderr)
         print(f" Output: {s.stdout.strip()}", file=sys.stderr)
         # noinspection PyUnboundLocalVariable
-        print(f" Time Elapsed: {time.time()-timer}")
+        print(f" Time Elapsed: {time.time() - timer}")
 
     out: str = s.stdout.strip()
     if out:
@@ -175,6 +176,7 @@ def quit_and_reset_preset(preset: int, clean: bool = True):
 
 
 def main_loop():
+    time.sleep(LOOP_DELAY)
     temps = get_system_temps()
     if temps is False:
         raise IOError("Could not get system temperatures")
@@ -183,7 +185,6 @@ def main_loop():
     for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
         if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
             raise IOError("Could not set fan speed")
-    time.sleep(LOOP_DELAY)
 
 
 if __name__ == '__main__':
@@ -193,19 +194,21 @@ if __name__ == '__main__':
     if os.geteuid() != 0:
         print("Warning: ipmitool access requires root;"
               " you may see misleading 'No such file or directory' errors", file=sys.stderr)
+
+    original_preset = get_fan_preset()
+    original_preset = FAN_PRESET_OPTIMAL if original_preset is False else original_preset  # Set fallback to optimal
+    temp_curve_dict = generate_curve_coefficients(TEMPERATURE_CURVE)
+    signal.signal(signal.SIGINT, lambda *_: quit_and_reset_preset(original_preset))
+    signal.signal(signal.SIGTERM, lambda *_: quit_and_reset_preset(original_preset))
+
     # noinspection PyBroadException
     try:
-        original_preset = get_fan_preset()
-        original_preset = FAN_PRESET_OPTIMAL if original_preset is False else original_preset  # Set fallback to optimal
         check_preset_full(True)
-        temp_curve_dict = generate_curve_coefficients(TEMPERATURE_CURVE)
         while True:
             main_loop()
     except KeyboardInterrupt:
-        # noinspection PyUnboundLocalVariable
         quit_and_reset_preset(original_preset)
     except Exception as e:
         print(traceback.format_exc(), file=sys.stderr)
         # If original_preset wasn't set, no changes were made and the program can crash without consequence
-        # noinspection PyUnboundLocalVariable
         quit_and_reset_preset(original_preset, False)
