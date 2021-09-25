@@ -140,10 +140,8 @@ def check_preset_full(set_to_full: bool = False):
 
     if preset != FAN_PRESET_FULL:
         if set_to_full:
-            print("Seting BMC fan preset to Full...")
+            print("Seting BMC fan preset to Full")
             set_fan_preset(FAN_PRESET_FULL)
-            print("Waiting to let fans spin up...")
-            time.sleep(3)
         else:
             print("Warning: Fan preset is not Full Speed, BMC will override curve speeds", file=sys.stderr)
 
