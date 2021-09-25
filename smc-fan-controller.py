@@ -141,7 +141,6 @@ def check_preset_full(set_to_full: bool = False):
 
     if preset != FAN_PRESET_FULL:
         if set_to_full:
-            print("Seting BMC fan preset to Full")
             set_fan_preset(FAN_PRESET_FULL)
         else:
             print("Warning: Fan preset is not Full Speed, BMC will override curve speeds", file=sys.stderr)
@@ -167,7 +166,6 @@ def set_zone_speed(fan_zone: int, speed: int):
 
 
 def quit_and_reset_preset(preset: int, clean: bool = True):
-    print(f"Resetting preset to {FAN_PRESETS_STR.get(preset, 'previous value')} before quitting")
     if not set_fan_preset(preset):
         print("CRITICAL: Fan preset could not be reset, fans may be locked too low!"
               " Overheat possible!", file=sys.stderr)
@@ -181,7 +179,7 @@ def main_loop():
     if temps is False:
         raise IOError("Could not get system temperatures")
     target_speed = target_fan_speed(temp_curve_dict, max(temps))
-    print(f"Got temperature {max(temps)}, setting speed to {target_speed}")
+    print(f"Got temperature {max(temps)}")
     for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
         if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
             raise IOError("Could not set fan speed")
