@@ -64,21 +64,21 @@ def target_fan_speed(curve: dict[int, tuple[int, int]], temperature: int) -> int
 def ipmi_cmd(raw_cmd: str):
     if DEBUG:
         timer = time.time()
-    s = subprocess.run(f"ipmitool {raw_cmd} 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    s = subprocess.run(f"ipmitool {raw_cmd} 2>&1", shell=True, capture_output=True, encoding='ascii')
     if s.returncode != 0:
         print(" Error: Problem running ipmitool", file=sys.stderr)
         print(f" Command: ipmitool {raw_cmd}", file=sys.stderr)
         print(f" Return code: {s.returncode}", file=sys.stderr)
-        print(f" Output: {s.stdout.decode('ascii').strip()}", file=sys.stderr)
+        print(f" Output: {s.stdout.strip()}", file=sys.stderr)
         return False
     elif DEBUG:
         print(f" Command: ipmitool {raw_cmd}", file=sys.stderr)
         print(f" Return code: {s.returncode}", file=sys.stderr)
-        print(f" Output: {s.stdout.decode('ascii').strip()}", file=sys.stderr)
+        print(f" Output: {s.stdout.strip()}", file=sys.stderr)
         # noinspection PyUnboundLocalVariable
         print(f" Time Elapsed: {time.time()-timer}")
 
-    out: bytes = s.stdout.strip()
+    out: str = s.stdout.strip()
     if out:
         return out
     else:
@@ -90,7 +90,7 @@ def ipmi_sdr_cmd(sensor_type: str):
     if csv_data is False:
         return False
 
-    data = csv.reader(csv_data.decode('ascii').splitlines())
+    data = csv.reader(csv_data.splitlines())
     return [dict(zip(IPMI_SDR_CSV_KEYS, sensor_data)) for sensor_data in data]
 
 
