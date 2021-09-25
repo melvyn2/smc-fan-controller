@@ -143,7 +143,6 @@ def check_preset_full(set_to_full: bool = False):
             time.sleep(3)
         else:
             print("Warning: Fan preset is not Full Speed, BMC will override curve speeds", file=sys.stderr)
-    return preset
 
 
 # noinspection PyDefaultArgument
@@ -182,8 +181,9 @@ if __name__ == '__main__':
         print("Warning: ipmitool access requires root;"
               " you may see misleading 'No such file or directory' errors", file=sys.stderr)
     try:
-        original_preset = check_preset_full(True)
+        original_preset = get_fan_preset()
         original_preset = FAN_PRESET_OPTIMAL if original_preset is False else original_preset  # Set fallback to optimal
+        check_preset_full(True)
         temp_curve_dict = generate_curve_coefficients(TEMPERATURE_CURVE)
         while True:
             temps = get_system_temps()
