@@ -100,8 +100,8 @@ def get_system_temps():
         print("Error: unable to get current system temperatures", file=sys.stderr)
         return False
     temps: map = map(lambda sensor: int(sensor["value"]),
-                         filter(lambda sensor: sensor["name"].startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
-                                filter(lambda sensor: sensor["status"] != "ns", temp_sensors)))
+                     filter(lambda sensor: sensor["name"].startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
+                            filter(lambda sensor: sensor["status"] != "ns", temp_sensors)))
     return list(temps)
 
 
@@ -176,6 +176,18 @@ def quit_and_reset_preset(preset: int, clean: bool = True):
     exit(0 if clean else 1)
 
 
+def main_loop():
+    temps = get_system_temps()
+    if temps is False:
+        raise IOError("Could not get system temperatures")
+    target_speed = target_fan_speed(temp_curve_dict, max(temps))
+    print(f"Got temperature {max(temps)}, setting speed to {target_speed}")
+    for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
+        if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
+            raise IOError("Could not set fan speed")
+    time.sleep(LOOP_DELAY)
+
+
 if __name__ == '__main__':
     if not shutil.which('ipmitool'):
         print("Error: smc-fan-controller requires ipmitool to be installed and in your PATH", file=sys.stderr)
@@ -183,21 +195,14 @@ if __name__ == '__main__':
     if os.geteuid() != 0:
         print("Warning: ipmitool access requires root;"
               " you may see misleading 'No such file or directory' errors", file=sys.stderr)
+    # noinspection PyBroadException
     try:
         original_preset = get_fan_preset()
         original_preset = FAN_PRESET_OPTIMAL if original_preset is False else original_preset  # Set fallback to optimal
         check_preset_full(True)
         temp_curve_dict = generate_curve_coefficients(TEMPERATURE_CURVE)
         while True:
-            temps = get_system_temps()
-            if temps is False:
-                raise IOError("Could not get system temperatures")
-            target_speed = target_fan_speed(temp_curve_dict, max(temps))
-            print(f"Got temperature {max(temps)}, setting speed to {target_speed}")
-            for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
-                if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
-                    raise IOError("Could not set fan speed")
-            time.sleep(LOOP_DELAY)
+            main_loop()
     except KeyboardInterrupt:
         # noinspection PyUnboundLocalVariable
         quit_and_reset_preset(original_preset)
