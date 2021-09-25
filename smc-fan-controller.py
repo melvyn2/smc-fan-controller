@@ -165,7 +165,7 @@ def set_zone_speed(fan_zone: int, speed: int):
 
 
 def quit_and_reset_preset(preset: int, clean: bool = True):
-    print("Resetting preset to optimal before quitting")
+    print(f"Resetting preset to {FAN_PRESETS_STR.get(preset, 'previous value')} before quitting")
     if not set_fan_preset(preset):
         print("CRITICAL: Fan preset could not be reset, fans may be locked too low!"
               " Overheat possible!", file=sys.stderr)
