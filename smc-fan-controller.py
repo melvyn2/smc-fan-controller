@@ -7,16 +7,16 @@ import sys
 import time
 import traceback
 
-DEFAULT_FAN_ZONES = [0, 1]
+FAN_ZONES = [0, 1]
+FAN_ZONE_OFFSETS = [0, -30]
 IPMI_SDR_TEMP_SENSOR_FILTER = ("CPU",)  # Filter temperature sensors with those that start with any of these
 # Temp to fan curve
 TEMPERATURE_CURVE = [(0, 0),
-                     (30, 0),
-                     (40, 30),
+                     (40, 20),
                      (60, 50),
                      (80, 80),
                      (90, 100)]
-LOOP_DELAY = 5
+LOOP_DELAY = 3
 
 FAN_PRESET_STANDARD = 0
 FAN_PRESET_FULL = 1
@@ -79,10 +79,10 @@ def get_system_temps():
     if temp_sensors is False:
         print("Error: unable to get current system temperatures", file=sys.stderr)
         return False
-    cpu_temps: map = map(lambda sensor: int(sensor["value"]),
+    temps: map = map(lambda sensor: int(sensor["value"]),
                          filter(lambda sensor: sensor["name"].startswith(IPMI_SDR_TEMP_SENSOR_FILTER),
                                 filter(lambda sensor: sensor["status"] != "ns", temp_sensors)))
-    return list(cpu_temps)
+    return list(temps)
 
 
 def get_fan_rpms():
@@ -139,35 +139,30 @@ def check_preset_full(set_to_full: bool = False):
         if set_to_full:
             print("Seting BMC fan preset to Full...")
             set_fan_preset(FAN_PRESET_FULL)
-            print("Waiting 5 seconds to let fans spin up...")
-            time.sleep(5)
+            print("Waiting to let fans spin up...")
+            time.sleep(3)
         else:
             print("Warning: Fan preset is not Full Speed, BMC will override curve speeds", file=sys.stderr)
     return preset
 
 
 # noinspection PyDefaultArgument
-def get_zone_speed(zones: list[int] = DEFAULT_FAN_ZONES):
-    res: list[int] = []
-    for zone in zones:
-        speed = int(ipmi_raw_cmd(IPMI_GET_ZONE_SPEED.format(zone=zone)), 16)
-        if speed is False:
-            print(f"Error: unable to get zone {zone} speed")
-        else:
-            res.append(speed)
-    return res
+def get_zone_speed(fan_zone: int):
+    speed = ipmi_raw_cmd(IPMI_GET_ZONE_SPEED.format(zone=fan_zone))
+    if speed is False:
+        print(f"Error: unable to get zone {fan_zone} speed")
+        return False
+    return int(speed, 16)
 
 
 # noinspection PyDefaultArgument
-def set_zone_speed(speed: int, zones: list[int] = DEFAULT_FAN_ZONES):
-    res: bool = True
-    for zone in zones:
-        if ipmi_raw_cmd(IPMI_SET_ZONE_SPEED.format(zone=zone, speed=speed)):
-            print(f"Set fans on zone {zone} to {speed:02}%")
-        else:
-            print(f"Error: Unable to update fan zone {zone}", file=sys.stderr)
-            res = False
-    return res
+def set_zone_speed(fan_zone: int, speed: int):
+    if ipmi_raw_cmd(IPMI_SET_ZONE_SPEED.format(zone=fan_zone, speed=speed)):
+        print(f"Set fans on zone {fan_zone} to {speed:02}%")
+        return True
+    else:
+        print(f"Error: Unable to update fan zone {fan_zone}", file=sys.stderr)
+        return False
 
 
 def quit_and_reset_preset(preset: int, clean: bool = True):
@@ -196,8 +191,9 @@ if __name__ == '__main__':
                 raise IOError("Could not get system temperatures")
             target_speed = target_fan_speed(temp_curve_dict, max(temps))
             print(f"Got temperature {max(temps)}, setting speed to {target_speed}")
-            if set_zone_speed(target_speed) is False:
-                raise IOError("Could not set fan speed")
+            for zone, offset in zip(FAN_ZONES, FAN_ZONE_OFFSETS):
+                if set_zone_speed(zone, max(min(target_speed + offset, 100), 0)) is False:
+                    raise IOError("Could not set fan speed")
             time.sleep(LOOP_DELAY)
     except KeyboardInterrupt:
         # noinspection PyUnboundLocalVariable
