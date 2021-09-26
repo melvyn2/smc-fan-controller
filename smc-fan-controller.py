@@ -170,7 +170,8 @@ def get_zone_speed(fan_zone: int):
 # noinspection PyDefaultArgument
 def set_zone_speed(fan_zone: int, speed: int):
     if ipmi_cmd("raw " + IPMI_SET_ZONE_SPEED.format(zone=fan_zone, speed=speed)):
-        print(f"Set fans on zone {fan_zone} to {speed:02}%")
+        if DEBUG:
+            print(f"Set fans on zone {fan_zone} to {speed:02}%")
         return True
     else:
         print(f"Error: Unable to update fan zone {fan_zone}", file=sys.stderr)
@@ -191,7 +192,8 @@ def main_loop(temp_sensors: list[str], temperature_curve: dict[int, tuple[int, i
     temps = get_system_temps(temp_sensors)
     if temps is False:
         raise IOError("Could not get system temperatures")
-    print(f"Got temperature {max(temps)}")
+    if DEBUG:
+        print(f"Got temperature {max(temps)}")
 
     target_speed = target_fan_speed(temperature_curve, max(temps))
 
