@@ -1,0 +1,11 @@
+[Unit]
+Description=SuperMicro Chassis fan controller
+
+[Service]
+Type=exec
+ExecStart=/usr/sbin/smc-fan-controller.py
+Restart=always
+OOMScoreAdjust=-100
+
+[Install]
+WantedBy=default.target
