@@ -31,8 +31,8 @@ FAN_PRESETS_STR = {
     FAN_PRESET_HEAVYIO: "heavyio"
 }
 
-IPMI_SDR_TEMP_TYPE = "TEMP"
-IPMI_SDR_FAN_TYPE = "FAN"
+IPMI_SDR_TEMP_TYPE = "temperature"
+IPMI_SDR_FAN_TYPE = "fan"
 IPMI_SDR_FULL_CSV_KEYS = ["name", "value", "unit", "status", "entity_id", "entity_name", "type", "nominal", "minimum",
                           "maximum", "unr", "uc", "unc", "lnr", "lc", "lnc", "unknown_1", "unknown_2"]
 IPMI_SDR_CONCISE_CSV_KEYS = ["name", "value", "unit", "status"]
